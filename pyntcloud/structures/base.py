@@ -23,6 +23,8 @@ class Structure(ABC):
     def compute(self):
         pass
 
+    def plot(self, scene):
+        pass
 
 class StructuresDict(dict):
     """Custom class to restrict PyntCloud.structures assigment."""
@@ -32,6 +34,7 @@ class StructuresDict(dict):
         self.n_kdtrees = 0
         self.n_delaunays = 0
         self.n_convex_hulls = 0
+        self.n_bboxes = 0
         super().__init__(*args)
 
     def __setitem__(self, key, val):
@@ -47,6 +50,8 @@ class StructuresDict(dict):
             self.n_delaunays += 1
         elif key.startswith("CH"):
             self.n_convex_hulls += 1
+        elif key.startswith("BBOXES"):
+            self.n_bboxes += 1
         else:
             raise ValueError("{} is not a valid structure.id".format(key))
         super().__setitem__(key, val)

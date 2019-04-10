@@ -1,3 +1,4 @@
+import numpy as np
 try:
     import ipywidgets
 except ImportError:
@@ -58,7 +59,7 @@ def get_orbit_controls(camera, centroid):
     return orbit_controls
 
 
-def plot_with_pythreejs(cloud, **kwargs):
+def plot_with_pythreejs(cloud, show_axes=True, point_colors=None, **kwargs):
     if ipywidgets is None:
         raise ImportError("ipywidgets is needed for plotting with pythreejs backend.")
     if pythreejs is None:
@@ -66,7 +67,10 @@ def plot_with_pythreejs(cloud, **kwargs):
     if display is None:
         raise ImportError("IPython is needed for plotting with pythreejs backend.")
 
-    colors = get_colors(cloud, kwargs["use_as_color"], kwargs["cmap"])
+    if point_colors is None:
+        colors = get_colors(cloud, kwargs["use_as_color"], kwargs["cmap"])
+    else:
+        colors = point_colors.astype(np.uint8)
 
     ptp = cloud.xyz.ptp()
 
@@ -102,6 +106,9 @@ def plot_with_pythreejs(cloud, **kwargs):
         controls = [get_orbit_controls(camera, cloud.centroid)]
 
         scene = pythreejs.Scene(children=children)
+        
+        if show_axes:
+            scene.add(pythreejs.AxesHelper(10))
 
         renderer = pythreejs.Renderer(
             scene=scene,
@@ -119,4 +126,4 @@ def plot_with_pythreejs(cloud, **kwargs):
 
     display(ipywidgets.HBox(children=widgets))
 
-    return scene if kwargs["return_scene"] else None
+    return scene

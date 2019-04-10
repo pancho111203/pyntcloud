@@ -617,6 +617,28 @@ class PyntCloud(object):
         if and_return:
             return splits
 
+    def generate_subcloud(self, box_xyzlwh):
+        # TODO add bounding boxes
+        # TODO make sure that xyzlwh is correct order of axes
+
+        box_x, box_y, box_z, box_l, box_w, box_h = box_xyzlwh
+
+        # get x y z and generate nx, ny, nz
+        new_xyz = self.xyz + np.array([box_x, box_y, box_z])
+
+        # filter out points that are outside of box (and save indices of points that are inside it)
+        subcloud_indices = (new_xyz[:, 0] < box_l) & (new_xyz[:, 1] < box_w) & (new_xyz[:, 2] < box_h)
+
+        # copy scalar_fields into the resulting point cloud
+        new_xyz = new_xyz[subcloud_indices]
+        new_df = self.points.iloc[subcloud_indices].copy()
+        new_df.loc[:, 'x'] = new_xyz[:, 0]
+        new_df.loc[:, 'y'] = new_xyz[:, 1]
+        new_df.loc[:, 'z'] = new_xyz[:, 2]
+
+        # return generated subcloud + indices
+        return PyntCloud(new_df), subcloud_indices
+
     def _update_points(self, df):
         """Utility function. Implicitly called when self.points is assigned."""
         self.mesh = None
@@ -641,7 +663,11 @@ class PyntCloud(object):
             return_scene=False,
             output_name="pyntcloud_plot",
             elev=0.,
-            azim=90.
+            azim=90.,
+            show_axes=True,
+            select_structures=None,
+            point_colors=None,
+            **kwargs
     ):
 
         """Visualize a PyntCloud  using different backends.
@@ -698,13 +724,23 @@ class PyntCloud(object):
         azim: float
             Azimuth angle in the x,y plane.
         """
-        args = locals()
+        args = { **locals(), **kwargs }
         backend = args.pop("backend")
 
         if backend == "matplotlib":
             return plot_with_matplotlib(self, **args)
         if backend == "pythreejs":
-            return plot_with_pythreejs(self, **args)
+            scene = plot_with_pythreejs(self, **args)
+            if select_structures is None:
+                select_structures = self.structures.keys()
+            for s_k in select_structures:
+                struct = self.structures[s_k]
+                struct.plot(scene)
+
+            if return_scene is True:
+                return scene
+            else:
+                return None
         elif backend == "threejs":
             return plot_with_threejs(self, **args)
         else:
