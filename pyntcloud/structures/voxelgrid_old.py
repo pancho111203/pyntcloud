@@ -19,11 +19,11 @@ except ImportError:
     is_numba_avaliable = False
 
 
-class VoxelGrid(Structure):
+class VoxelGrid_Old(Structure):
 
-    def __init__(self, *, points, n_x=1, n_y=1, n_z=1, size_x=None, size_y=None, size_z=None):
+    def __init__(self, *, points, n_x=1, n_y=1, n_z=1, size_x=None, size_y=None, size_z=None, regular_bounding_box=True):
         """Grid of voxels with support for different build methods.
-            
+
         Parameters
         ----------
         points: (N, 3) numpy.array
@@ -35,113 +35,79 @@ class VoxelGrid(Structure):
             Default: None
             The desired voxel size along each axis.
             If not None, the corresponding n_x, n_y or n_z will be ignored.
+        regular_bounding_box : bool, optional
+            Default: True
+            If True, the bounding box of the point cloud will be adjusted
+            in order to have all the dimensions of equal length.
         """
         super().__init__(points=points)
-
-        if size_x is None or size_y is None or size_z is None:
-            print('WARNING: when computing a voxelgrid for running a Neural net, voxel sizes should be homogeneous among different point clouds or the neural network wont learn spatial relationships. To ensure this, use (size_x, size_y, size_z) instead of (n_x, n_y, n_z)')
-
         self.x_y_z = [n_x, n_y, n_z]
         self.sizes = [size_x, size_y, size_z]
-        self.xyzmin = self._points.min(0)
-        self.xyzmax = self._points.max(0)
-        
-        for n, size in enumerate(self.sizes):
-            if size is None:
-                continue
-
-            # ensure that 'sizes' are respected by making the box bigger if necessary
-            margin = size - ((self.xyzmax[n] - self.xyzmin[n]) % size)
-            self.xyzmin[n] -= margin / 2
-            self.xyzmax[n] += margin / 2
-            self.x_y_z[n] = ((self.xyzmax[n] - self.xyzmin[n]) / size).astype(int)
-
-    def locate_points(self, points):
-        # find where each point lies in corresponding segmented axis
-        if self.segments is None:
-            raise Exception('call compute first')
-
-        # px = points[:, 0]
-        # py = points[:, 1]
-        # pz = points[:, 2]
-
-        # s_px = np.argsort(px)
-        # s_py = np.argsort(py)
-        # s_pz = np.argsort(pz)
-
-        # res = np.zeros_like(points, dtype=int)
-
-        # pointer = 0
-        # for ind_x in s_px:
-        #     px_v = px[ind_x]
-        #     while pointer < len(self.segments[0]) and self.segments[0][pointer] <= px_v:
-        #         pointer += 1
-        #     pointer -= 1
-        #     res[ind_x,0] = pointer
-        #     assert pointer < self.x_y_z[0], 'index: {}, max: {}'.format(pointer, self.x_y_z[0])
-
-        # pointer = 0 
-        # for ind_y in s_py:
-        #     py_v = py[ind_y]
-        #     while pointer < len(self.segments[1]) and self.segments[1][pointer] <= py_v:
-        #         pointer += 1
-        #     pointer -= 1
-        #     res[ind_y,1] = pointer
-
-        #     assert pointer < self.x_y_z[1], 'index: {}, max: {}'.format(pointer, self.x_y_z[1])
-
-        # pointer = 0 
-        # for ind_z in s_pz:
-        #     pz_v = pz[ind_z]
-        #     while pointer < len(self.segments[2]) and self.segments[2][pointer] <= pz_v:
-        #         pointer += 1
-        #     pointer -= 1
-        #     res[ind_z,2] = pointer
-
-        #     assert pointer < self.x_y_z[2], 'index: {}, max: {}'.format(pointer, self.x_y_z[2])
-
-        voxel_x = np.searchsorted(self.segments[0], points[:, 0], side='right') - 1
-        voxel_y = np.searchsorted(self.segments[1], points[:, 1], side='right') - 1
-        voxel_z = np.searchsorted(self.segments[2], points[:, 2], side='right') - 1
-
-        assert voxel_x.max() < self.x_y_z[0], '{}, {}'.format(voxel_x.max(), self.x_y_z[0])
-        assert voxel_y.max() < self.x_y_z[1], '{}, {}'.format(voxel_y.max(), self.x_y_z[1])
-        assert voxel_z.max() < self.x_y_z[2], '{}, {}'.format(voxel_z.max(), self.x_y_z[2])
-
-        return np.ravel_multi_index([voxel_x, voxel_y, voxel_z], self.x_y_z)
+        self.regular_bounding_box = regular_bounding_box
 
     def compute(self):
         """ABC API."""
+        xyzmin = self._points.min(0)
+        xyzmax = self._points.max(0)
+
+        if self.regular_bounding_box:
+            #: adjust to obtain a minimum bounding box with all sides of equal length
+            margin = max(xyzmax - xyzmin) - (xyzmax - xyzmin)
+            xyzmin = xyzmin - margin / 2
+            xyzmax = xyzmax + margin / 2
+
+        for n, size in enumerate(self.sizes):
+            if size is None:
+                continue
+            margin = (((self._points.ptp(0)[n] // size) + 1) * size) - self._points.ptp(0)[n]
+            xyzmin[n] -= margin / 2
+            xyzmax[n] += margin / 2
+            self.x_y_z[n] = ((xyzmax[n] - xyzmin[n]) / size).astype(int)
+
+        self.xyzmin = xyzmin
+        self.xyzmax = xyzmax
+
         segments = []
         shape = []
         for i in range(3):
             # note the +1 in num
-            s, step = np.linspace(self.xyzmin[i], self.xyzmax[i], num=(self.x_y_z[i]), retstep=True, endpoint=False)
+            s, step = np.linspace(xyzmin[i], xyzmax[i], num=(self.x_y_z[i] + 1), retstep=True)
             segments.append(s)
             shape.append(step)
 
-            if self.sizes[i] is not None:
-                assert abs(self.sizes[i] - step) <= 0.00001, 'given voxel sizes are not being respected: {} should be {}'.format(step, self.sizes[i])
-
-            assert len(s) == self.x_y_z[i]
         self.segments = segments
         self.shape = shape
 
-        self.n_voxels = len(self.segments[0]) * len(self.segments[1]) * len(self.segments[2])
+        self.n_voxels = self.x_y_z[0] * self.x_y_z[1] * self.x_y_z[2]
 
-        self.id = "V({},{})".format(self.x_y_z, self.sizes)
+        self.id = "V({},{},{})".format(self.x_y_z, self.sizes, self.regular_bounding_box)
 
-        self.voxel_n = self.locate_points(self._points)
+        # find where each point lies in corresponding segmented axis
+        # -1 so index are 0-based; clip for edge cases
+        self.voxel_x = np.clip(np.searchsorted(self.segments[0], self._points[:, 0]) - 1, 0, self.x_y_z[0])
+        self.voxel_y = np.clip(np.searchsorted(self.segments[1], self._points[:, 1]) - 1, 0, self.x_y_z[1])
+        self.voxel_z = np.clip(np.searchsorted(self.segments[2], self._points[:, 2]) - 1, 0,  self.x_y_z[2])
+        self.voxel_n = np.ravel_multi_index([self.voxel_x, self.voxel_y, self.voxel_z], self.x_y_z)
 
-        # TODO optimise this, now takes too long
         # compute center of each voxel
         # midsegments = [(self.segments[i][1:] + self.segments[i][:-1]) / 2 for i in range(3)]
         # self.voxel_centers = cartesian(midsegments).astype(np.float32)
 
     def query(self, points):
         """ABC API. Query structure.
+
+        TODO Make query_voxelgrid an independent function, and add a light
+        save mode where only segments and x_y_z are saved.
         """
-        return self.locate_points(points)
+        voxel_x = np.clip(np.searchsorted(
+            self.segments[0], points[:, 0]) - 1, 0, self.x_y_z[0])
+        voxel_y = np.clip(np.searchsorted(
+            self.segments[1], points[:, 1]) - 1, 0, self.x_y_z[1])
+        voxel_z = np.clip(np.searchsorted(
+            self.segments[2], points[:, 2]) - 1, 0, self.x_y_z[2])
+        voxel_n = np.ravel_multi_index([voxel_x, voxel_y, voxel_z], self.x_y_z)
+
+        return voxel_n
 
     def get_feature_vector(self, mode="binary"):
         """Return a vector of size self.n_voxels. See mode options below.
@@ -187,10 +153,10 @@ class VoxelGrid(Structure):
             vector[:len(count)] = count
             vector /= len(self.voxel_n)
 
-        # elif mode == "TDF":
-        #     # truncation = np.linalg.norm(self.shape)
-        #     kdt = cKDTree(self._points)
-        #     vector, i = kdt.query(self.voxel_centers, n_jobs=-1)
+        elif mode == "TDF":
+            # truncation = np.linalg.norm(self.shape)
+            kdt = cKDTree(self._points)
+            vector, i = kdt.query(self.voxel_centers, n_jobs=-1)
 
         elif mode.endswith("_max"):
             if not is_numba_avaliable:
@@ -255,16 +221,35 @@ class VoxelGrid(Structure):
 
         return [x for x in ravel_indices if x in np.unique(self.voxel_n)]
 
-    def __str__(self):
-        st = ''
-        if self.segments:
-            st += 'Num segments x: {}, y: {}, z: {}\n'.format(len(self.segments[0]), len(self.segments[1]), len(self.segments[2]))
-        if self.shape:
-            st += 'Shape of each voxel: {}\n'.format(self.shape)
-        if self.n_voxels is not None:
-            st += 'Total voxels: {}\n'.format(self.n_voxels)
-        if self.voxel_n is not None:
-            uniq, counts = np.unique(self.voxel_n, return_counts=True, axis=0)
-            st += 'Max points in one single section: {}\n'.format(counts.max())
-            st += 'Sections with at least one point: {}\n'.format(len(uniq))
-        return st
+    def plot(self,
+             d=2,
+             mode="binary",
+             cmap="Oranges",
+             axis=False,
+             output_name=None,
+             width=800,
+             height=500):
+        feature_vector = self.get_feature_vector(mode)
+
+        if d == 2:
+            if not is_matplotlib_avaliable:
+                raise ImportError("matplotlib is required for 2d plotting")
+
+            fig, axes = plt.subplots(
+                int(np.ceil(self.x_y_z[2] / 4)), 4, figsize=(20, 20))
+            plt.tight_layout()
+            for i, ax in enumerate(axes.flat):
+                if i >= len(feature_vector):
+                    break
+                ax.imshow(feature_vector[:, :, i],
+                          cmap=cmap, interpolation="nearest")
+                ax.set_title("Level " + str(i))
+
+        elif d == 3:
+            return plot_voxelgrid(self,
+                                  mode=mode,
+                                  cmap=cmap,
+                                  axis=axis,
+                                  output_name=output_name,
+                                  width=width,
+                                  height=height)

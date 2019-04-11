@@ -347,13 +347,15 @@ class PyntCloud(object):
         if name in ALL_STRUCTURES:
             info = ALL_STRUCTURES[name].extract_info(pyntcloud=self)
             structure = ALL_STRUCTURES[name](**info, **kwargs)
-            structure.compute()
-            structure_added = structure.get_and_set(self)
-
+            structure_added = self._add_structure(structure)
         else:
             raise ValueError("Unsupported structure. Check docstring")
 
         return structure_added
+
+    def _add_structure(self, struct):
+        struct.compute()
+        return struct.get_and_set(self)
 
     def get_filter(self, name, and_apply=False, **kwargs):
         """Compute filter over PyntCloud's points and return it.
@@ -618,17 +620,22 @@ class PyntCloud(object):
             return splits
 
     def generate_subcloud(self, box_xyzlwh):
-        # TODO add bounding boxes
-        # TODO make sure that xyzlwh is correct order of axes
-
+        # xyz marks center of point
         box_x, box_y, box_z, box_l, box_w, box_h = box_xyzlwh
 
         # get x y z and generate nx, ny, nz
-        new_xyz = self.xyz + np.array([box_x, box_y, box_z])
+        new_xyz = self.xyz - np.array([box_x, box_y, box_z])
 
         # filter out points that are outside of box (and save indices of points that are inside it)
-        subcloud_indices = (new_xyz[:, 0] < box_l) & (new_xyz[:, 1] < box_w) & (new_xyz[:, 2] < box_h)
+        new_x = new_xyz[:, 0]
+        new_y = new_xyz[:, 1]
+        new_z = new_xyz[:, 2]
 
+        on_l = (new_x <= box_l/2) & (new_x >= -box_l/2)
+        on_w = (new_y <= box_w/2) & (new_y >= -box_w/2)
+        on_h = (new_z <= box_h/2) & (new_z >= -box_h/2)
+
+        subcloud_indices = on_l & on_w & on_h
         # copy scalar_fields into the resulting point cloud
         new_xyz = new_xyz[subcloud_indices]
         new_df = self.points.iloc[subcloud_indices].copy()
@@ -636,8 +643,16 @@ class PyntCloud(object):
         new_df.loc[:, 'y'] = new_xyz[:, 1]
         new_df.loc[:, 'z'] = new_xyz[:, 2]
 
+        subcloud = PyntCloud(new_df)
+
+        # add compatible structures
+        for key, struct in self.structures.items():
+            substruct = struct.generate_subcloud(box_xyzlwh)
+            if substruct is not None:
+                subcloud._add_structure(substruct)
+
         # return generated subcloud + indices
-        return PyntCloud(new_df), subcloud_indices
+        return subcloud, subcloud_indices
 
     def _update_points(self, df):
         """Utility function. Implicitly called when self.points is assigned."""

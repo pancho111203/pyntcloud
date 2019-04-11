@@ -26,6 +26,12 @@ class Structure(ABC):
     def plot(self, scene):
         pass
 
+    # return structure for subcloud generated on the parent PyntCloud
+    # should only be implemented if we want the structure to persist after a subcloud is generated
+    def generate_subcloud(self, box_xyzlwh):
+        return None
+
+
 class StructuresDict(dict):
     """Custom class to restrict PyntCloud.structures assigment."""
 
