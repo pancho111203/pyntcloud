@@ -9,7 +9,7 @@ class Structure(ABC):
 
     def get_and_set(self, pyntcloud):
         pyntcloud.structures[self.id] = self
-        return self.id
+        return self
 
     @classmethod
     def extract_info(cls, pyntcloud):
