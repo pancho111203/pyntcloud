@@ -43,6 +43,7 @@ class VoxelGrid(Structure):
 
         self.x_y_z = [n_x, n_y, n_z]
         self.sizes = [size_x, size_y, size_z]
+
         self.xyzmin = self._points.min(0)
         self.xyzmax = self._points.max(0)
         

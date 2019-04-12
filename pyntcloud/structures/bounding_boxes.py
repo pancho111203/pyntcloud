@@ -20,7 +20,7 @@ BBOX_COLORS = {
 
 
 class BoundingBoxes(Structure):
-    def __init__(self, points, calib, bboxes, corners=None):
+    def __init__(self, points, calib, bboxes, ignore_empty_bboxes=False, corners=None):
         ''' corners: list of bounding boxes with corners in the following order
             bboxes: info about the original bounding box Object3d (coordinates of this object aren't always right, they're based on original bounding box, so corners object should be trusted if available)
             6 -------- 7      z| x
@@ -40,6 +40,41 @@ class BoundingBoxes(Structure):
             self._compute_corners(bboxes)
         self.corners = np.array(self.corners)
         self.bboxes = np.array(self.bboxes)
+
+        if ignore_empty_bboxes is True:
+            self.corners = self._filter_empty_bboxes(self.corners)
+
+    def _filter_empty_bboxes(self, corners):
+        # this code is here for reference, but in practice it's not efficient to calculate this each time we use the dataset
+        # the right way to do it is to calculate it once and save the invalid bboxes in a file or remove them from the dataset directly
+        # (unless the bounding boxes are dynamic)
+        def point_inside_box(c, point):
+            #  https://math.stackexchange.com/questions/1472049/check-if-a-point-is-inside-a-rectangular-shaped-area-3d
+            ax = c[2] - c[1]
+            ay = c[0] - c[1]
+            az = c[5] - c[1]
+           
+            px = np.dot(ax, point)
+            py = np.dot(ay, point)
+            pz = np.dot(az, point)
+            
+            cx = px >= np.dot(ax, c[1]) and px <= np.dot(ax, c[2])
+            cy = py >= np.dot(ay, c[1]) and py <= np.dot(ay, c[0])
+            cz = pz >= np.dot(az, c[1]) and pz <= np.dot(az, c[5])
+
+            return cx and cy and cz
+
+        def box_contains_points(box, points):
+            for point in points:
+                if point_inside_box(box, point):
+                    return True
+            return False
+        valid_corners = []
+        for i, corner in enumerate(corners):
+            if box_contains_points(corner, self._points) is True:
+                valid_corners.append(i)
+
+        return corners[valid_corners]
 
     def _compute_corners(self, bboxes):
         self.corners = []
@@ -138,7 +173,7 @@ class BoundingBoxes(Structure):
             corner -= np.array([box_x, box_y, box_z])
             new_corners.append(corner)
 
-        structure = BoundingBoxes(points=self._points, calib=self.calib, bboxes=self.bboxes[idx_to_include], corners=new_corners)
+        structure = BoundingBoxes(points=self._points, calib=self.calib, bboxes=self.bboxes[idx_to_include], corners=new_corners, ignore_empty_bboxes=False)
         return structure
 
     def __str__(self):

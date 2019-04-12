@@ -72,8 +72,6 @@ def plot_with_pythreejs(cloud, show_axes=True, point_colors=None, **kwargs):
     else:
         colors = point_colors.astype(np.uint8)
 
-    ptp = cloud.xyz.ptp()
-
     children = []
     widgets = []
 
@@ -87,7 +85,7 @@ def plot_with_pythreejs(cloud, show_axes=True, point_colors=None, **kwargs):
     points = get_pointcloud_pythreejs(cloud.xyz, colors)
     children.append(points)
 
-    initial_point_size = kwargs["initial_point_size"] or ptp / 10
+    initial_point_size = kwargs["initial_point_size"] or 0.01
     size = ipywidgets.FloatSlider(
         value=initial_point_size,
         min=0.0,
