@@ -1,5 +1,5 @@
 import numpy as np
-
+import math
 try:
     import matplotlib.pyplot as plt
     is_matplotlib_avaliable = True
@@ -54,7 +54,7 @@ class VoxelGrid(Structure):
             margin = size - ((self.xyzmax[n] - self.xyzmin[n]) % size)
             self.xyzmin[n] -= margin / 2
             self.xyzmax[n] += margin / 2
-            self.x_y_z[n] = ((self.xyzmax[n] - self.xyzmin[n]) / size).astype(int)
+            self.x_y_z[n] = int(round((self.xyzmax[n] - self.xyzmin[n]) / size))
 
     def locate_points(self, points):
         # find where each point lies in corresponding segmented axis

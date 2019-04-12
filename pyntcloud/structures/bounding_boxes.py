@@ -23,13 +23,13 @@ class BoundingBoxes(Structure):
     def __init__(self, points, calib, bboxes, corners=None):
         ''' corners: list of bounding boxes with corners in the following order
             bboxes: info about the original bounding box Object3d (coordinates of this object aren't always right, they're based on original bounding box, so corners object should be trusted if available)
-            1 -------- 0
-           /|         /|
-          2 -------- 3 .
-          | |        | |
-          . 5 -------- 4
+            6 -------- 7      z| x
+           /|         /|       |/ 
+          5 -------- 4 .  y -- -- -y
+          | |        | |      /
+          . 2 -------- 3    -x  
           |/         |/
-          6 -------- 7
+          1 -------- 0
         '''
         Structure.__init__(self, points=points)
         self.calib = calib
@@ -140,3 +140,12 @@ class BoundingBoxes(Structure):
 
         structure = BoundingBoxes(points=self._points, calib=self.calib, bboxes=self.bboxes[idx_to_include], corners=new_corners)
         return structure
+
+    def __str__(self):
+        st = ''
+
+        st += '{} bounding box/es'.format(len(self.corners))
+        return st
+
+    def __len__(self):
+        return len(self.corners)
