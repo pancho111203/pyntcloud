@@ -20,7 +20,7 @@ BBOX_COLORS = {
 
 
 class BoundingBoxes(Structure):
-    def __init__(self, points, calib, bboxes, ignore_empty_bboxes=False, corners=None):
+    def __init__(self, points, calib, bboxes, ignore_empty_bboxes=False, corners=None, **kwargs):
         ''' corners: list of bounding boxes with corners in the following order
             bboxes: info about the original bounding box Object3d (coordinates of this object aren't always right, they're based on original bounding box, so corners object should be trusted if available)
             6 -------- 7      z| x
@@ -31,7 +31,7 @@ class BoundingBoxes(Structure):
           |/         |/
           1 -------- 0
         '''
-        Structure.__init__(self, points=points)
+        Structure.__init__(self, points=points, **kwargs)
         self.calib = calib
         self.bboxes = bboxes
         if corners is not None:
@@ -172,8 +172,8 @@ class BoundingBoxes(Structure):
             corner = self.corners[idx].copy()
             corner -= np.array([box_x, box_y, box_z])
             new_corners.append(corner)
-
-        structure = BoundingBoxes(points=self._points, calib=self.calib, bboxes=self.bboxes[idx_to_include], corners=new_corners, ignore_empty_bboxes=False)
+            
+        structure = BoundingBoxes(points=self._points, bounds=self.bounds, calib=self.calib, origin=self.origin, bboxes=self.bboxes[idx_to_include], corners=new_corners, ignore_empty_bboxes=False)
         return structure
 
     def __str__(self):
@@ -184,3 +184,15 @@ class BoundingBoxes(Structure):
 
     def __len__(self):
         return len(self.corners)
+    def get_shape(self, corner):
+        w = np.linalg.norm(corner[0] - corner[1])
+        h = np.linalg.norm(corner[5] - corner[1])
+        l = np.linalg.norm(corner[2] - corner[1]) 
+        return (l, w, h)
+
+    def get_shapes(self):
+        shapes = []
+        for corner in self.corners:
+            shapes.append(self.get_shape(corner))
+
+        return shapes

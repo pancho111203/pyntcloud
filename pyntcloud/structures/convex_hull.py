@@ -9,8 +9,8 @@ class ConvexHull(scipy_ConvexHull, Structure):
 
     def __init__(self, points,
                  incremental=False,
-                 qhull_options=None):
-        Structure.__init__(self, points=points)
+                 qhull_options=None, **kwargs):
+        Structure.__init__(self, points=points, **kwargs)
         self._incremental = incremental
         self._qhull_options = qhull_options
 

@@ -5,8 +5,8 @@ from .base import Structure
 
 class KDTree(cKDTree, Structure):
 
-    def __init__(self, *, points, leafsize=16, compact_nodes=False, balanced_tree=False):
-        Structure.__init__(self, points=points)
+    def __init__(self, *, points, leafsize=16, compact_nodes=False, balanced_tree=False, **kwargs):
+        Structure.__init__(self, points=points, **kwargs)
         self._leafsize = leafsize
         self._compact_nodes = compact_nodes
         self._balanced_tree = balanced_tree

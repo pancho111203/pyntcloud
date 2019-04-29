@@ -1,5 +1,7 @@
+import time
 import numpy as np
 import math
+from ..utils.voxelgrid import supercover_line, get_points_from_bounds
 try:
     import matplotlib.pyplot as plt
     is_matplotlib_avaliable = True
@@ -18,10 +20,11 @@ try:
 except ImportError:
     is_numba_avaliable = False
 
+PRECISION = 1e-6
 
 class VoxelGrid(Structure):
 
-    def __init__(self, *, points, n_x=1, n_y=1, n_z=1, size_x=None, size_y=None, size_z=None):
+    def __init__(self, *, points, n_x=1, n_y=1, n_z=1, size_x=None, size_y=None, size_z=None, **kwargs):
         """Grid of voxels with support for different build methods.
             
         Parameters
@@ -36,17 +39,17 @@ class VoxelGrid(Structure):
             The desired voxel size along each axis.
             If not None, the corresponding n_x, n_y or n_z will be ignored.
         """
-        super().__init__(points=points)
+        super().__init__(points=points, **kwargs)
 
         if size_x is None or size_y is None or size_z is None:
             print('WARNING: when computing a voxelgrid for running a Neural net, voxel sizes should be homogeneous among different point clouds or the neural network wont learn spatial relationships. To ensure this, use (size_x, size_y, size_z) instead of (n_x, n_y, n_z)')
 
         self.x_y_z = [n_x, n_y, n_z]
-        self.sizes = [size_x, size_y, size_z]
+        self.sizes = np.array([size_x, size_y, size_z])
 
-        self.xyzmin = self._points.min(0)
-        self.xyzmax = self._points.max(0)
-        
+        self.xyzmin = self.bounds[0]
+        self.xyzmax = self.bounds[1]
+
         for n, size in enumerate(self.sizes):
             if size is None:
                 continue
@@ -164,6 +167,9 @@ class VoxelGrid(Structure):
         binary
             0 for empty voxels, 1 for occupied.
 
+        binary_with_nopoints
+            0 for empty voxels, 1 for occupied, -1 for voxels through which rays pass (nopoints)
+
         density
             number of points inside voxel / total number of points.
 
@@ -182,22 +188,63 @@ class VoxelGrid(Structure):
 
         if mode == "binary":
             vector[np.unique(self.voxel_n)] = 1
+            vector = vector.reshape(self.x_y_z)
+
+        elif mode == "binary_with_nopoints":
+            vector[np.unique(self.voxel_n)] = 1
+            vector = vector.reshape(self.x_y_z)
+            tot_bounds = abs(self.bounds[0]) + abs(self.bounds[1])
+            # TODO can be parallelised
+            non_points = []
+            for point in self._points:
+                start, end = get_points_from_bounds(self.bounds[0], self.bounds[1], self.origin, point)
+                start_projected_voxelgrid = (start - self.bounds[0])
+                end_projected_voxelgrid = (end - self.bounds[0])
+
+                assert np.all(start_projected_voxelgrid + PRECISION >= 0), 'Start / end point for nopoints calculation out of bounds: {} / {}'.format(start_projected_voxelgrid + PRECISION, tot_bounds)
+                assert np.all(end_projected_voxelgrid + PRECISION >= 0), 'Start / end point for nopoints calculation out of bounds: {} / {}'.format(end_projected_voxelgrid + PRECISION, tot_bounds)
+                assert np.all(start_projected_voxelgrid - PRECISION <= tot_bounds), 'Start / end point for nopoints calculation out of bounds: {} / {}'.format(start_projected_voxelgrid, tot_bounds)
+                assert np.all(end_projected_voxelgrid - PRECISION <= tot_bounds), 'Start / end point for nopoints calculation out of bounds: {} / {}'.format(end_projected_voxelgrid, tot_bounds)
+
+                start_projected_voxelgrid = np.clip(start_projected_voxelgrid, 0, tot_bounds - PRECISION)
+                end_projected_voxelgrid = np.clip(end_projected_voxelgrid, 0, tot_bounds - PRECISION)
+
+                new_non_points = list(supercover_line(start_projected_voxelgrid, end_projected_voxelgrid, self.sizes))
+                non_points.extend(new_non_points)
+                # if not np.all(np.array(new_non_points) >= 0) or not np.all(np.array(new_non_points).max(axis=0) < vector.shape):
+                #     print('Non-point detected with indices under 0 or over size')
+                #     print('start = {}'.format(start_projected_voxelgrid))
+                #     print('end = {}'.format(end_projected_voxelgrid))
+                #     print('Max Size: {}'.format(vector.shape))
+                #     print('Wrong points:')
+                #     print(np.array(new_non_points))
+                #     raise Exception()
+
+            # convert only cells that are 0 to -1, NOT 1 to -1
+            non_points = np.unique(np.array(non_points), axis=0).astype(int)
+
+            temp = vector[non_points[:, 0], non_points[:, 1], non_points[:, 2]]
+            temp[temp == 0] = -1
+            vector[non_points[:, 0], non_points[:, 1], non_points[:, 2]] = temp
 
         elif mode == "density":
             count = np.bincount(self.voxel_n)
             vector[:len(count)] = count
             vector /= len(self.voxel_n)
+            vector = vector.reshape(self.x_y_z)
 
         # elif mode == "TDF":
         #     # truncation = np.linalg.norm(self.shape)
         #     kdt = cKDTree(self._points)
         #     vector, i = kdt.query(self.voxel_centers, n_jobs=-1)
+        #     vector = vector.reshape(self.x_y_z)
 
         elif mode.endswith("_max"):
             if not is_numba_avaliable:
                 raise ImportError("numba is required to compute {}".format(mode))
             axis = {"x_max": 0, "y_max": 1, "z_max": 2}
             vector = groupby_max(self._points, self.voxel_n, axis[mode], vector)
+            vector = vector.reshape(self.x_y_z)
 
         elif mode.endswith("_mean"):
             if not is_numba_avaliable:
@@ -206,11 +253,12 @@ class VoxelGrid(Structure):
             voxel_sum = groupby_sum(self._points, self.voxel_n, axis[mode], np.zeros(self.n_voxels))
             voxel_count = groupby_count(self._points, self.voxel_n, np.zeros(self.n_voxels))
             vector = np.nan_to_num(voxel_sum / voxel_count)
+            vector = vector.reshape(self.x_y_z)
 
         else:
             raise NotImplementedError("{} is not a supported feature vector mode".format(mode))
 
-        return vector.reshape(self.x_y_z)
+        return vector
 
     def get_voxel_neighbors(self, voxel):
         """Get valid, non-empty 26 neighbors of voxel.

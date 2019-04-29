@@ -10,8 +10,8 @@ class Delaunay3D(Delaunay, Structure):
     def __init__(self, points,
                  furthest_site=False,
                  incremental=False,
-                 qhull_options=None):
-        Structure.__init__(self, points=points)
+                 qhull_options=None, **kwargs):
+        Structure.__init__(self, points=points, **kwargs)
         self._furthest_site = furthest_site
         self._incremental = incremental
         self._qhull_options = qhull_options

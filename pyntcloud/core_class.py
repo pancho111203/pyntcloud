@@ -20,7 +20,7 @@ from .utils.dataframe import convert_columns_dtype
 class PyntCloud(object):
     """A Pythonic Point Cloud."""
 
-    def __init__(self, points, mesh=None, structures={}, **kwargs):
+    def __init__(self, points, mesh=None, structures={}, bounds=None, origin=None, **kwargs):
         """Create PyntCloud.
 
         Parameters
@@ -49,6 +49,16 @@ class PyntCloud(object):
         # store raw xyz values to share memory along structures
         self.xyz = self.points[["x", "y", "z"]].values
         self.centroid = self.xyz.mean(0)
+        if origin is None:
+            self.origin = np.array([0, 0, 0])
+        else:
+            self.origin = origin
+
+        if bounds is None:
+            self.bounds = (self.xyz.min(0), self.xyz.max(0))
+        else:
+            self.bounds = (np.array(bounds[0]), np.array(bounds[1]))
+
 
     def __repr__(self):
         default = [
@@ -622,10 +632,14 @@ class PyntCloud(object):
     def generate_subcloud(self, box_xyzlwh):
         # xyz marks center of point
         box_x, box_y, box_z, box_l, box_w, box_h = box_xyzlwh
+    
+        min_bounds = (- box_l/2, - box_w/2, - box_h/2)
+        max_bounds = (box_l/2, box_w/2, box_h/2)
 
         # get x y z and generate nx, ny, nz
-        new_xyz = self.xyz - np.array([box_x, box_y, box_z])
-
+        p = np.array([box_x, box_y, box_z])
+        new_xyz = self.xyz - p
+        new_origin = self.origin - p
         # filter out points that are outside of box (and save indices of points that are inside it)
         new_x = new_xyz[:, 0]
         new_y = new_xyz[:, 1]
@@ -643,7 +657,7 @@ class PyntCloud(object):
         new_df.loc[:, 'y'] = new_xyz[:, 1]
         new_df.loc[:, 'z'] = new_xyz[:, 2]
 
-        subcloud = PyntCloud(new_df)
+        subcloud = PyntCloud(new_df, bounds=(min_bounds, max_bounds), origin=new_origin)
 
         # add compatible structures
         for key, struct in self.structures.items():
