@@ -4,10 +4,11 @@ from abc import ABC, abstractmethod, abstractclassmethod
 class Structure(ABC):
     """Base class for structures."""
 
-    def __init__(self, *, points, bounds, origin):
+    def __init__(self, *, points, bounds, origin, parent):
         self._points = points
         self.bounds = bounds
         self.origin = origin
+        self.parent = parent
 
     def get_and_set(self, pyntcloud):
         pyntcloud.structures[self.id] = self
@@ -19,7 +20,8 @@ class Structure(ABC):
         info = {
             "points": pyntcloud.xyz,
             "bounds": pyntcloud.bounds,
-            "origin": pyntcloud.origin
+            "origin": pyntcloud.origin,
+            "parent": pyntcloud
         }
         return info
 
@@ -48,8 +50,8 @@ class StructuresDict(dict):
         super().__init__(*args)
 
     def __setitem__(self, key, val):
-        if not issubclass(val.__class__, Structure):
-            raise TypeError("{} must be base.Structure subclass".format(key))
+        # if not issubclass(val.__class__, Structure):
+        #     raise TypeError("{} must be base.Structure subclass".format(key))
 
         # TODO better structure.id check
         if key.startswith("V"):
