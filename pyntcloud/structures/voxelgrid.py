@@ -119,17 +119,15 @@ class VoxelGrid(Structure):
 
         self.is_inside_bounds = (voxel_x >= 0) & (voxel_x < self.x_y_z[0]-1) & (voxel_y >= 0) & (voxel_y < self.x_y_z[1]-1) & (voxel_z >= 0) & (voxel_z < self.x_y_z[2]-1)
         
-        self.voxel_x = voxel_x[self.is_inside_bounds]    
-        self.voxel_y = voxel_y[self.is_inside_bounds]    
-        self.voxel_z = voxel_z[self.is_inside_bounds]
+        self.voxel_x = voxel_x[self.is_inside_bounds].astype(np.int32)  
+        self.voxel_y = voxel_y[self.is_inside_bounds].astype(np.int32)  
+        self.voxel_z = voxel_z[self.is_inside_bounds].astype(np.int32)
 
         self.points_inside_bounds = points[self.is_inside_bounds]
 
         assert self.voxel_x.max() < self.x_y_z[0]-1, '{}, {}'.format(self.voxel_x.max(), self.x_y_z[0])
         assert self.voxel_y.max() < self.x_y_z[1]-1, '{}, {}'.format(self.voxel_y.max(), self.x_y_z[1])
         assert self.voxel_z.max() < self.x_y_z[2]-1, '{}, {}'.format(self.voxel_z.max(), self.x_y_z[2])
-
-        return np.ravel_multi_index([self.voxel_x, self.voxel_y, self.voxel_z], self.x_y_z)
 
     def compute(self):
         """ABC API."""
@@ -152,28 +150,24 @@ class VoxelGrid(Structure):
 
         self.id = "V({},{})".format(self.x_y_z, self.sizes)
 
-        self.voxel_n = self.locate_points(self._points)
+        self.locate_points(self._points)
 
         # TODO optimise this, now takes too long
         # compute center of each voxel
         # midsegments = [(self.segments[i][1:] + self.segments[i][:-1]) / 2 for i in range(3)]
         # self.voxel_centers = cartesian(midsegments).astype(np.float32)
 
-        assert len(self.voxel_n) == len(self.points_inside_bounds)
-
     def query(self, points):
         """ABC API. Query structure.
         """
         return self.locate_points(points)
-
-
 
     # TODO implement sparse version of other modes
     # TODO store already computed features
     def get_sparse_features(self, mode='binary'):
         if mode == 'binary':
             indices = np.stack([self.voxel_x, self.voxel_y, self.voxel_z], axis=1)
-            features = np.ones(indices.shape[0])
+            features = np.ones(indices.shape[0], dtype=np.uint8)
             return (indices, features)
         else:
             raise Exception('Invalid model: {}'.format(mode))
@@ -215,15 +209,16 @@ class VoxelGrid(Structure):
         x_mean, y_mean, z_mean
             Mean coordinate value of points inside each voxel.
         """
+        voxel_n = np.ravel_multi_index([self.voxel_x, self.voxel_y, self.voxel_z], self.x_y_z)
         if mode == "binary":
             vector = np.zeros(self.n_voxels)
-            vector[np.unique(self.voxel_n)] = 1
+            vector[np.unique(voxel_n)] = 1
             vector = vector.reshape(self.x_y_z)
             return vector
 
         elif mode == "binary_with_nopoints":
             vector = np.zeros(self.n_voxels)
-            vector[np.unique(self.voxel_n)] = 1
+            vector[np.unique(voxel_n)] = 1
             vector = vector.reshape(self.x_y_z)
             tot_bounds = abs(self.bounds[0]) + abs(self.bounds[1])
             # TODO can be parallelised
@@ -261,9 +256,9 @@ class VoxelGrid(Structure):
             return vector
         elif mode == "density":
             vector = np.zeros(self.n_voxels)
-            count = np.bincount(self.voxel_n)
+            count = np.bincount(voxel_n)
             vector[:len(count)] = count
-            vector /= len(self.voxel_n)
+            vector /= len(voxel_n)
             vector = vector.reshape(self.x_y_z)
             return vector
         # elif mode == "TDF":
@@ -278,7 +273,7 @@ class VoxelGrid(Structure):
             if not is_numba_avaliable:
                 raise ImportError("numba is required to compute {}".format(mode))
             axis = {"x_max": 0, "y_max": 1, "z_max": 2}
-            vector = groupby_max(self.points_inside_bounds, self.voxel_n, axis[mode], vector)
+            vector = groupby_max(self.points_inside_bounds, voxel_n, axis[mode], vector)
             vector = vector.reshape(self.x_y_z)
             return vector
         elif mode.endswith("_mean"):
@@ -286,8 +281,8 @@ class VoxelGrid(Structure):
             if not is_numba_avaliable:
                 raise ImportError("numba is required to compute {}".format(mode))
             axis = {"x_mean": 0, "y_mean": 1, "z_mean": 2}
-            voxel_sum = groupby_sum(self.points_inside_bounds, self.voxel_n, axis[mode], np.zeros(self.n_voxels))
-            voxel_count = groupby_count(self.points_inside_bounds, self.voxel_n, np.zeros(self.n_voxels))
+            voxel_sum = groupby_sum(self.points_inside_bounds, voxel_n, axis[mode], np.zeros(self.n_voxels))
+            voxel_count = groupby_count(self.points_inside_bounds, voxel_n, np.zeros(self.n_voxels))
             vector = np.nan_to_num(voxel_sum / voxel_count)
             vector = vector.reshape(self.x_y_z)
             return vector
@@ -337,8 +332,8 @@ class VoxelGrid(Structure):
         ravel_indices = np.ravel_multi_index((valid_neighbor_indices[:, 0],
                                               valid_neighbor_indices[:, 1],
                                               valid_neighbor_indices[:, 2]), self.x_y_z)
-
-        return [x for x in ravel_indices if x in np.unique(self.voxel_n)]
+        voxel_n = np.ravel_multi_index([self.voxel_x, self.voxel_y, self.voxel_z], self.x_y_z)
+        return [x for x in ravel_indices if x in np.unique(voxel_n)]
 
     def __str__(self):
         st = ''
@@ -348,9 +343,9 @@ class VoxelGrid(Structure):
             st += 'Shape of each voxel: {}\n'.format(self.shape)
         if self.n_voxels is not None:
             st += 'Total voxels: {}\n'.format(self.n_voxels)
-        if self.voxel_n is not None:
-            uniq, counts = np.unique(self.voxel_n, return_counts=True, axis=0)
-            st += 'Max points in one single section: {}\n'.format(counts.max())
-            st += 'Sections with at least one point: {}\n'.format(len(uniq))
+        # if self.voxel_n is not None:
+        #     uniq, counts = np.unique(self.voxel_n, return_counts=True, axis=0)
+        #     st += 'Max points in one single section: {}\n'.format(counts.max())
+        #     st += 'Sections with at least one point: {}\n'.format(len(uniq))
         st+= 'Boundaries: min: {}, max: {}'.format(self.xyzmin, self.xyzmax)
         return st

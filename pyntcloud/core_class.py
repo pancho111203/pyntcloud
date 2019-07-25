@@ -14,6 +14,7 @@ from .plot.pythreejs_backend import plot_with_pythreejs
 from .samplers import ALL_SAMPLERS
 from .scalar_fields import ALL_SF
 from .structures import ALL_STRUCTURES
+from .structures.base import Structure
 from .utils.dataframe import convert_columns_dtype
 
 
@@ -39,7 +40,7 @@ class PyntCloud(object):
 
         kwargs: custom attributes
         """
-        self.points = points
+        # self.points = points
         self.mesh = mesh
         self.structures = StructuresDict()
         for key, val in structures.items():
@@ -47,7 +48,7 @@ class PyntCloud(object):
         for key, val in kwargs.items():
             setattr(self, key, val)
         # store raw xyz values to share memory along structures
-        self.xyz = self.points[["x", "y", "z"]].values
+        self.xyz = points[["x", "y", "z"]].values.astype(np.float16)
         self.centroid = self.xyz.mean(0)
         if origin is None:
             self.origin = np.array([0, 0, 0])
@@ -366,6 +367,12 @@ class PyntCloud(object):
     def _add_structure(self, struct):
         struct.compute()
         return struct.get_and_set(self)
+
+    def remove_structure(self, struct):
+        if isinstance(struct, Structure):
+            del self.structures[struct.id]
+        else:
+            del self.structures[struct]
 
     def get_filter(self, name, and_apply=False, **kwargs):
         """Compute filter over PyntCloud's points and return it.
